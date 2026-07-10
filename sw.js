@@ -1,5 +1,5 @@
 /* Service worker Portail - hors-ligne, réseau d'abord pour le code. */
-const CACHE = 'portail-v1';
+const CACHE = 'portail-v2';
 const ASSETS = [
   './',
   './index.html',

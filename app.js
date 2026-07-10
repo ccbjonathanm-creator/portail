@@ -1,157 +1,170 @@
-/* Portail - univers 3D immersif exploré au gyroscope. 100% local. */
+/* Portail - un lapin géant en réalité augmentée se promène dans ta pièce.
+   Caméra réelle en fond + lapin 3D animé (construit en code, 100% local). */
 (function () {
   'use strict';
 
   const canvas = document.getElementById('scene');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const video = document.getElementById('cam');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0);            // transparent : on voit la caméra derrière
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x05010f, 0.018);
 
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 400);
-  // La caméra reste à l'origine, on ne fait que tourner la tête.
-  const camHolder = new THREE.Object3D();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+  const camHolder = new THREE.Object3D();          // on tourne la tête, pas la position
   camHolder.add(camera);
   scene.add(camHolder);
 
-  // ---------- Génération d'une texture "glow" radiale (bloom pas cher) ----------
-  function glowTexture(inner, outer) {
-    const s = 128;
-    const c = document.createElement('canvas'); c.width = c.height = s;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-    grad.addColorStop(0.0, inner);
-    grad.addColorStop(0.25, outer);
-    grad.addColorStop(1.0, 'rgba(0,0,0,0)');
-    g.fillStyle = grad; g.fillRect(0, 0, s, s);
-    const t = new THREE.CanvasTexture(c);
-    return t;
+  const FLOOR_Y = -1.4;                            // le sol, ~1,4 m sous le téléphone tenu à la main
+
+  // ---------- Lumières ----------
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x404060, 0.9);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.15);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 30;
+  sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
+  sun.shadow.camera.top = 6; sun.shadow.camera.bottom = -6;
+  sun.shadow.bias = -0.0008;
+  scene.add(sun);
+  scene.add(sun.target);
+
+  // ---------- Sol invisible qui reçoit l'ombre (ancre le lapin au sol réel) ----------
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(60, 60),
+    new THREE.ShadowMaterial({ opacity: 0.34 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = FLOOR_Y;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // ================= LE LAPIN =================
+  function mat(color, rough) {
+    return new THREE.MeshStandardMaterial({ color: color, roughness: rough == null ? 0.85 : rough, metalness: 0.0, flatShading: true });
   }
-  const starTex = glowTexture('rgba(255,255,255,1)', 'rgba(180,200,255,0.5)');
-  const softTex = glowTexture('rgba(255,255,255,0.9)', 'rgba(255,255,255,0)');
+  const furMat = mat(0xece8f2, 0.9);
+  const furShade = mat(0xd7d1e4, 0.9);
+  const pinkMat = mat(0xff9bb0, 0.7);
+  const noseMat = mat(0xff6f91, 0.6);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1526, roughness: 0.25, metalness: 0.1 });
 
-  // ---------- Champ d'étoiles profond ----------
-  function makeStars(count, radius, size, colorA, colorB) {
-    const geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(count * 3);
-    const col = new Float32Array(count * 3);
-    const cA = new THREE.Color(colorA), cB = new THREE.Color(colorB), tmp = new THREE.Color();
-    for (let i = 0; i < count; i++) {
-      // distribution sur une sphère
-      const u = Math.random(), v = Math.random();
-      const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
-      const r = radius * (0.6 + Math.random() * 0.4);
-      pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      pos[i * 3 + 2] = r * Math.cos(phi);
-      tmp.copy(cA).lerp(cB, Math.random());
-      col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
-    }
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const mat = new THREE.PointsMaterial({
-      size: size, map: starTex, vertexColors: true, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
-    });
-    return new THREE.Points(geo, mat);
+  const rabbit = new THREE.Group();
+
+  function part(geo, material, x, y, z) {
+    const m = new THREE.Mesh(geo, material);
+    m.position.set(x, y, z);
+    m.castShadow = true; m.receiveShadow = true;
+    return m;
   }
 
-  const starsFar = makeStars(2600, 260, 1.4, 0x9fb4ff, 0xffffff);
-  const starsNear = makeStars(900, 120, 2.6, 0x7f5cff, 0x22d3ee);
-  scene.add(starsFar, starsNear);
+  // Corps (ovoïde)
+  const body = part(new THREE.SphereGeometry(0.55, 20, 16), furMat, 0, 0.72, 0);
+  body.scale.set(1.0, 0.9, 1.35);
+  rabbit.add(body);
 
-  // ---------- Nuages de nébuleuse (sprites additifs colorés) ----------
-  const nebula = new THREE.Group();
-  const nebColors = [0x7f5cff, 0x22d3ee, 0xff5ca8, 0x4f46e5, 0x14b8a6];
-  for (let i = 0; i < 26; i++) {
-    const color = nebColors[i % nebColors.length];
-    const mat = new THREE.SpriteMaterial({
-      map: softTex, color: color, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.20
-    });
-    const sp = new THREE.Sprite(mat);
-    const u = Math.random(), v = Math.random();
-    const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
-    const r = 60 + Math.random() * 120;
-    sp.position.set(
-      r * Math.sin(phi) * Math.cos(theta),
-      r * Math.sin(phi) * Math.sin(theta) * 0.7,
-      r * Math.cos(phi)
-    );
-    const s = 40 + Math.random() * 90;
-    sp.scale.set(s, s, 1);
-    sp.userData.spin = (Math.random() - 0.5) * 0.02;
-    nebula.add(sp);
+  // Poitrail relevé (assis façon lapin)
+  const chest = part(new THREE.SphereGeometry(0.42, 18, 14), furMat, 0, 1.05, 0.42);
+  chest.scale.set(1, 1.1, 1);
+  rabbit.add(chest);
+
+  // Tête
+  const headGrp = new THREE.Group();
+  headGrp.position.set(0, 1.5, 0.52);
+  const head = part(new THREE.SphereGeometry(0.36, 20, 16), furMat, 0, 0, 0);
+  head.scale.set(1, 0.95, 1.02);
+  headGrp.add(head);
+  // Museau
+  const muzzle = part(new THREE.SphereGeometry(0.22, 16, 12), furMat, 0, -0.08, 0.28);
+  muzzle.scale.set(1, 0.85, 1.05);
+  headGrp.add(muzzle);
+  // Nez
+  const nose = part(new THREE.SphereGeometry(0.055, 10, 8), noseMat, 0, -0.05, 0.5);
+  headGrp.add(nose);
+  // Joues
+  headGrp.add(part(new THREE.SphereGeometry(0.13, 12, 10), furShade, 0.17, -0.06, 0.34));
+  headGrp.add(part(new THREE.SphereGeometry(0.13, 12, 10), furShade, -0.17, -0.06, 0.34));
+  // Yeux
+  const eyeL = part(new THREE.SphereGeometry(0.07, 12, 10), eyeMat, 0.19, 0.05, 0.28);
+  const eyeR = part(new THREE.SphereGeometry(0.07, 12, 10), eyeMat, -0.19, 0.05, 0.28);
+  headGrp.add(eyeL, eyeR);
+  // reflets
+  headGrp.add(part(new THREE.SphereGeometry(0.022, 8, 6), eyeMat.clone(), 0.21, 0.09, 0.34));
+  // Oreilles (pivotent à la base)
+  function makeEar(side) {
+    const g = new THREE.Group();
+    const outer = part(new THREE.SphereGeometry(0.13, 12, 12), furMat, 0, 0.45, 0);
+    outer.scale.set(1, 3.4, 0.55);
+    const inner = part(new THREE.SphereGeometry(0.09, 12, 12), pinkMat, 0, 0.45, 0.05);
+    inner.scale.set(1, 3.2, 0.4);
+    g.add(outer, inner);
+    g.position.set(side * 0.16, 0.28, -0.02);
+    g.rotation.z = side * 0.14;
+    g.rotation.x = -0.12;
+    return g;
   }
-  scene.add(nebula);
+  const earL = makeEar(1), earR = makeEar(-1);
+  headGrp.add(earL, earR);
+  rabbit.add(headGrp);
 
-  // ---------- Portails lumineux flottants ----------
-  const portals = new THREE.Group();
-  const zones = [
-    { name: 'Nebula Prime', color: 0x7f5cff },
-    { name: 'Cyan Drift', color: 0x22d3ee },
-    { name: 'Rose Halo', color: 0xff5ca8 },
-    { name: 'Verdant Gate', color: 0x14b8a6 },
-    { name: 'Indigo Deep', color: 0x4f46e5 }
-  ];
-  const portalMeshes = [];
-  zones.forEach((z, i) => {
-    const grp = new THREE.Object3D();
-    const ang = (i / zones.length) * Math.PI * 2;
-    const dist = 34 + (i % 2) * 10;
-    grp.position.set(Math.cos(ang) * dist, (Math.random() - 0.5) * 18, Math.sin(ang) * dist);
-    grp.lookAt(0, 0, 0);
+  // Pattes (groupes pivotant à la hanche) : 2 avant, 2 arrière
+  function makeLeg(hipX, hipY, hipZ, len, thick, back) {
+    const g = new THREE.Group();
+    g.position.set(hipX, hipY, hipZ);
+    const upper = part(new THREE.SphereGeometry(thick, 12, 10), furMat, 0, -len * 0.35, back ? -0.05 : 0);
+    upper.scale.set(1, 1.6, 1);
+    const foot = part(new THREE.SphereGeometry(thick * 0.9, 12, 10), furShade, 0, -len * 0.85, back ? 0.12 : 0.06);
+    foot.scale.set(1, 0.6, 1.7);
+    g.add(upper, foot);
+    return g;
+  }
+  const legFL = makeLeg(0.24, 0.62, 0.42, 0.6, 0.15, false);
+  const legFR = makeLeg(-0.24, 0.62, 0.42, 0.6, 0.15, false);
+  const legBL = makeLeg(0.32, 0.7, -0.28, 0.7, 0.2, true);
+  const legBR = makeLeg(-0.32, 0.7, -0.28, 0.7, 0.2, true);
+  rabbit.add(legFL, legFR, legBL, legBR);
 
-    // anneau principal
-    const ringGeo = new THREE.TorusGeometry(7, 0.35, 16, 80);
-    const ringMat = new THREE.MeshBasicMaterial({ color: z.color });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    grp.add(ring);
+  // Queue pompon
+  const tail = part(new THREE.SphereGeometry(0.19, 14, 12), furMat, 0, 0.78, -0.72);
+  rabbit.add(tail);
 
-    // halo (sprite glow derrière)
-    const haloMat = new THREE.SpriteMaterial({ map: softTex, color: z.color,
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 });
-    const halo = new THREE.Sprite(haloMat);
-    halo.scale.set(26, 26, 1);
-    grp.add(halo);
+  // Échelle "géant" et pose au sol
+  const SCALE = 1.25;
+  rabbit.scale.setScalar(SCALE);
+  rabbit.position.set(0, FLOOR_Y, -4);
+  scene.add(rabbit);
 
-    // "surface" du portail : disque semi-transparent scintillant
-    const discGeo = new THREE.CircleGeometry(6.7, 48);
-    const discMat = new THREE.MeshBasicMaterial({ color: z.color, transparent: true,
-      opacity: 0.14, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false });
-    const disc = new THREE.Mesh(discGeo, discMat);
-    grp.add(disc);
+  // ================= DÉPLACEMENT (il erre dans la pièce) =================
+  const anchor = new THREE.Vector3(0, FLOOR_Y, -4);   // centre de sa zone de balade
+  let target = pickTarget();
+  let facing = Math.PI;                 // orientation courante (regarde vers la caméra au départ)
+  let speed = 0;                        // vitesse actuelle (m/s monde)
+  let hopT = 0, nextHop = 3 + Math.random() * 4;
+  let pauseT = 0;
 
-    grp.userData = { zone: z, baseY: grp.position.y, phase: Math.random() * Math.PI * 2, ring: ring, disc: disc };
-    portalMeshes.push(grp);
-    portals.add(grp);
-  });
-  scene.add(portals);
+  function pickTarget() {
+    const a = Math.random() * Math.PI * 2;
+    const r = 1 + Math.random() * 2.6;
+    return new THREE.Vector3(anchor.x + Math.cos(a) * r, FLOOR_Y, anchor.z + Math.sin(a) * r);
+  }
 
-  // Poussière proche qui donne la sensation de mouvement / profondeur
-  const dust = makeStars(400, 40, 1.8, 0xffffff, 0x9fb4ff);
-  scene.add(dust);
-
-  // ================= CONTRÔLES =================
-  // Mode gyroscope (mobile) OU glisser (desktop/fallback)
+  // ================= CONTRÔLES (gyroscope + repli glisser) =================
   let mode = 'drag';
   const deviceEuler = new THREE.Euler();
-  const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -PI/2 sur X
+  const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
   const zee = new THREE.Vector3(0, 0, 1);
   const qOrient = new THREE.Quaternion();
-  let orientation = 0;
-  let devData = null;
+  let orientation = 0, devData = null;
 
-  function onDeviceOrientation(e) {
-    if (e.alpha == null) return;
-    devData = e;
-  }
-  function onScreenOrientation() {
-    orientation = THREE.MathUtils.degToRad(window.orientation || 0);
-  }
-
+  function onDeviceOrientation(e) { if (e.alpha != null) devData = e; }
+  function onScreenOrientation() { orientation = THREE.MathUtils.degToRad(window.orientation || 0); }
   function applyDeviceQuaternion() {
     if (!devData) return;
     const alpha = THREE.MathUtils.degToRad(devData.alpha);
@@ -164,91 +177,120 @@
     camHolder.quaternion.multiply(qOrient);
   }
 
-  // Drag (souris + tactile) -> yaw/pitch
-  let dragYaw = 0, dragPitch = 0, targetYaw = 0, targetPitch = 0;
+  let dragYaw = 0, dragPitch = -0.15, targetYaw = 0, targetPitch = -0.15;
   let dragging = false, lastX = 0, lastY = 0;
-  function pointerDown(x, y) { dragging = true; lastX = x; lastY = y; hideHints(); }
-  function pointerMove(x, y) {
+  function pDown(x, y) { dragging = true; lastX = x; lastY = y; hideHint(); }
+  function pMove(x, y) {
     if (!dragging) return;
-    targetYaw -= (x - lastX) * 0.0045;
-    targetPitch -= (y - lastY) * 0.0045;
-    targetPitch = Math.max(-1.2, Math.min(1.2, targetPitch));
+    targetYaw -= (x - lastX) * 0.005;
+    targetPitch -= (y - lastY) * 0.005;
+    targetPitch = Math.max(-1.3, Math.min(1.0, targetPitch));
     lastX = x; lastY = y;
   }
-  function pointerUp() { dragging = false; }
-
-  canvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
-  window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
-  window.addEventListener('mouseup', pointerUp);
-  canvas.addEventListener('touchstart', e => { const t = e.touches[0]; pointerDown(t.clientX, t.clientY); }, { passive: true });
-  canvas.addEventListener('touchmove', e => { const t = e.touches[0]; pointerMove(t.clientX, t.clientY); }, { passive: true });
-  canvas.addEventListener('touchend', pointerUp);
+  function pUp() { dragging = false; }
+  canvas.addEventListener('mousedown', e => pDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => pMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', pUp);
+  canvas.addEventListener('touchstart', e => { const t = e.touches[0]; pDown(t.clientX, t.clientY); }, { passive: true });
+  canvas.addEventListener('touchmove', e => { const t = e.touches[0]; pMove(t.clientX, t.clientY); }, { passive: true });
+  canvas.addEventListener('touchend', pUp);
 
   // ================= BOUCLE =================
   const clock = new THREE.Clock();
-  const forward = new THREE.Vector3();
   const fpsEl = document.getElementById('fps');
-  const zoneNameEl = document.getElementById('zoneName');
-  let frames = 0, fpsTime = 0, currentZone = '';
-
-  function pickZone() {
-    // Quelle direction regarde-t-on ? -> nom de zone du portail le plus aligné
-    camera.getWorldDirection(forward);
-    let best = -Infinity, bestZone = null;
-    portalMeshes.forEach(p => {
-      const dir = p.position.clone().normalize();
-      const d = dir.dot(forward);
-      if (d > best) { best = d; bestZone = p.userData.zone; }
-    });
-    if (bestZone && bestZone.name !== currentZone && best > 0.55) {
-      currentZone = bestZone.name;
-      zoneNameEl.textContent = currentZone;
-      zoneNameEl.classList.remove('fade-in'); void zoneNameEl.offsetWidth; zoneNameEl.classList.add('fade-in');
-    }
-  }
+  const tmpDir = new THREE.Vector3();
+  let frames = 0, fpsTime = 0;
 
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
-    // rotation lente de l'univers pour la vie
-    starsFar.rotation.y += dt * 0.006;
-    starsNear.rotation.y += dt * 0.012;
-    nebula.rotation.y += dt * 0.004;
-    nebula.children.forEach(sp => { sp.material.rotation += sp.userData.spin * dt; });
-    dust.rotation.y -= dt * 0.03;
-    dust.rotation.x += dt * 0.01;
+    // --- déplacement du lapin ---
+    tmpDir.subVectors(target, rabbit.position); tmpDir.y = 0;
+    const dist = tmpDir.length();
+    if (pauseT > 0) {
+      pauseT -= dt; speed += (0 - speed) * Math.min(1, dt * 6);
+    } else if (dist < 0.25) {
+      target = pickTarget();
+      pauseT = 0.6 + Math.random() * 2.2;   // il s'arrête, renifle, repart
+    } else {
+      speed += (0.85 - speed) * Math.min(1, dt * 3);
+      tmpDir.normalize();
+      rabbit.position.addScaledVector(tmpDir, speed * dt);
+      // s'oriente vers sa direction de marche (lissé)
+      const want = Math.atan2(tmpDir.x, tmpDir.z);
+      let d = want - facing;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      facing += d * Math.min(1, dt * 5);
+    }
+    rabbit.rotation.y = facing;
 
-    // portails : flottement + pulsation + rotation d'anneau
-    portalMeshes.forEach(p => {
-      p.position.y = p.userData.baseY + Math.sin(t * 0.6 + p.userData.phase) * 2.2;
-      p.userData.ring.rotation.z += dt * 0.4;
-      const pulse = 0.12 + (Math.sin(t * 1.5 + p.userData.phase) * 0.5 + 0.5) * 0.14;
-      p.userData.disc.material.opacity = pulse;
-      p.lookAt(0, p.position.y, 0);
-    });
+    // --- saut occasionnel ---
+    nextHop -= dt;
+    if (nextHop <= 0 && pauseT <= 0 && hopT <= 0) { hopT = 0.55; nextHop = 4 + Math.random() * 5; }
+    let hopY = 0, hopSquash = 0;
+    if (hopT > 0) {
+      hopT -= dt;
+      const p = 1 - hopT / 0.55;              // 0..1
+      hopY = Math.sin(p * Math.PI) * 0.7;      // arc
+      hopSquash = Math.sin(p * Math.PI) * 0.12;
+    }
 
-    // caméra
+    // --- animation de marche ---
+    const moving = speed > 0.08 ? 1 : 0;
+    const gait = t * 9;
+    const sw = Math.sin(gait) * 0.5 * moving;
+    const swAlt = Math.sin(gait + Math.PI) * 0.5 * moving;
+    legFL.rotation.x = sw; legBR.rotation.x = sw * 0.9;
+    legFR.rotation.x = swAlt; legBL.rotation.x = swAlt * 0.9;
+    // corps qui ondule + respiration
+    const bob = Math.abs(Math.sin(gait)) * 0.06 * moving + Math.sin(t * 2) * 0.015;
+    rabbit.position.y = FLOOR_Y + bob + hopY;
+    body.scale.y = 0.9 - hopSquash + Math.sin(t * 2) * 0.01;
+    body.scale.x = 1.0 + hopSquash * 0.5;
+
+    // oreilles qui ballottent
+    const ear = Math.sin(t * 3) * 0.12 + moving * Math.sin(gait * 0.5) * 0.1;
+    earL.rotation.x = -0.12 + ear;
+    earR.rotation.x = -0.12 + Math.sin(t * 3 + 0.6) * 0.12 + moving * Math.sin(gait * 0.5 + 0.4) * 0.1;
+    // pendant le saut, oreilles vers l'arrière
+    if (hopT > 0) { earL.rotation.x -= 0.5; earR.rotation.x -= 0.5; }
+
+    // tête qui bouge un peu + reniflement du nez
+    headGrp.rotation.x = Math.sin(t * 0.8) * 0.05 + (pauseT > 0 ? Math.sin(t * 6) * 0.06 : 0);
+    headGrp.rotation.y = Math.sin(t * 0.5) * 0.12;
+    const twitch = pauseT > 0 ? (Math.sin(t * 22) * 0.5 + 0.5) : 0;
+    nose.scale.setScalar(1 + twitch * 0.25);
+
+    // clignement des yeux
+    const blink = (Math.sin(t * 1.7) > 0.985) ? 0.1 : 1;
+    eyeL.scale.y = blink; eyeR.scale.y = blink;
+
+    // queue frétille
+    tail.position.x = Math.sin(t * 5) * 0.03 * moving;
+
+    // --- l'ombre suit le lapin ---
+    sun.target.position.copy(rabbit.position);
+    sun.position.set(rabbit.position.x + 3, rabbit.position.y + 9, rabbit.position.z + 2);
+
+    // --- caméra ---
     if (mode === 'gyro') {
       applyDeviceQuaternion();
     } else {
       dragYaw += (targetYaw - dragYaw) * Math.min(1, dt * 8);
       dragPitch += (targetPitch - dragPitch) * Math.min(1, dt * 8);
-      // dérive douce automatique quand on ne touche pas
-      if (!dragging) targetYaw += dt * 0.02;
       camHolder.rotation.set(dragPitch, dragYaw, 0, 'YXZ');
     }
 
-    pickZone();
     renderer.render(scene, camera);
-
     frames++; fpsTime += dt;
     if (fpsTime >= 0.5) { fpsEl.textContent = Math.round(frames / fpsTime) + ' fps'; frames = 0; fpsTime = 0; }
   }
   animate();
 
-  // ================= REDIMENSIONNEMENT =================
+  // ================= RESIZE =================
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -263,47 +305,45 @@
   const startNote = document.getElementById('startNote');
   const hudTop = document.getElementById('hudTop');
   const hintEl = document.getElementById('hint');
-  let hintsHidden = false;
-
-  function hideHints() {
-    if (hintsHidden) return;
-    hintsHidden = true;
-    hintEl.classList.remove('show');
-  }
+  const statusLine = document.getElementById('statusLine');
+  let hintHidden = false;
+  function hideHint() { if (!hintHidden) { hintHidden = true; hintEl.classList.remove('show'); } }
 
   const hasOrientation = 'DeviceOrientationEvent' in window;
   const needsPermission = hasOrientation && typeof DeviceOrientationEvent.requestPermission === 'function';
-  if (hasOrientation && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-    startNote.textContent = needsPermission
-      ? "L'app va demander l'accès aux capteurs de mouvement (rien n'est enregistré ni envoyé)."
-      : "Bouge ton téléphone dans tous les sens pour regarder autour de toi.";
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+  function startGyro() { window.addEventListener('deviceorientation', onDeviceOrientation, true); mode = 'gyro'; }
+
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      document.body.classList.add('has-cam');
+      return true;
+    } catch (e) { return false; }
   }
 
-  function startGyro() {
-    window.addEventListener('deviceorientation', onDeviceOrientation, true);
-    mode = 'gyro';
-  }
-
-  function enter() {
-    const finish = () => {
-      startEl.classList.add('hidden');
-      hudTop.classList.add('show');
-      hintEl.classList.add('show');
-      setTimeout(() => hintEl.classList.remove('show'), 5000);
-    };
+  async function enter() {
+    enterBtn.disabled = true;
+    const camOk = await startCamera();
     if (needsPermission) {
-      DeviceOrientationEvent.requestPermission().then(state => {
-        if (state === 'granted') startGyro();
-        finish();
-      }).catch(finish);
-    } else {
-      if (hasOrientation && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) startGyro();
-      finish();
+      try { const s = await DeviceOrientationEvent.requestPermission(); if (s === 'granted') startGyro(); } catch (_) {}
+    } else if (hasOrientation && isMobile) {
+      startGyro();
     }
+    if (!camOk) statusLine.textContent = 'Mode démo (sans caméra)';
+    startEl.classList.add('hidden');
+    hudTop.classList.add('show');
+    hintEl.classList.add('show');
+    setTimeout(() => hintEl.classList.remove('show'), 5500);
   }
   enterBtn.addEventListener('click', enter);
 
-  // Double-tap discret sur le coin haut-gauche pour afficher les fps
-  let taps = 0;
   document.addEventListener('keydown', e => { if (e.key === 'f') fpsEl.style.display = fpsEl.style.display === 'block' ? 'none' : 'block'; });
 })();
