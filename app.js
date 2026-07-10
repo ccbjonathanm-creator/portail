@@ -52,9 +52,12 @@
   }
   const furMat = mat(0xece8f2, 0.9);
   const furShade = mat(0xd7d1e4, 0.9);
-  const pinkMat = mat(0xff9bb0, 0.7);
-  const noseMat = mat(0xff6f91, 0.6);
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1526, roughness: 0.25, metalness: 0.1 });
+  const pinkMat = mat(0xd98a9a, 0.7);
+  const noseMat = mat(0x3a1020, 0.5);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff1500, roughness: 0.2, metalness: 0.0,
+    emissive: 0xff2200, emissiveIntensity: 1.6 });
+  const browMat = mat(0x2a2233, 0.8);
+  const fangMat = mat(0xfbf7ff, 0.4);
 
   const rabbit = new THREE.Group();
 
@@ -91,12 +94,30 @@
   // Joues
   headGrp.add(part(new THREE.SphereGeometry(0.13, 12, 10), furShade, 0.17, -0.06, 0.34));
   headGrp.add(part(new THREE.SphereGeometry(0.13, 12, 10), furShade, -0.17, -0.06, 0.34));
-  // Yeux
-  const eyeL = part(new THREE.SphereGeometry(0.07, 12, 10), eyeMat, 0.19, 0.05, 0.28);
-  const eyeR = part(new THREE.SphereGeometry(0.07, 12, 10), eyeMat, -0.19, 0.05, 0.28);
+  // Yeux rouges rougeoyants, bridés (méchants)
+  const eyeL = part(new THREE.SphereGeometry(0.085, 14, 12), eyeMat, 0.2, 0.06, 0.28);
+  const eyeR = part(new THREE.SphereGeometry(0.085, 14, 12), eyeMat, -0.2, 0.06, 0.28);
+  eyeL.scale.set(1, 0.6, 1); eyeL.rotation.z = -0.5;   // coin externe relevé = regard mauvais
+  eyeR.scale.set(1, 0.6, 1); eyeR.rotation.z = 0.5;
   headGrp.add(eyeL, eyeR);
-  // reflets
-  headGrp.add(part(new THREE.SphereGeometry(0.022, 8, 6), eyeMat.clone(), 0.21, 0.09, 0.34));
+  // Halo rouge dans l'oeil
+  headGrp.add(part(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdd55 }), 0.21, 0.08, 0.35));
+  headGrp.add(part(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdd55 }), -0.21, 0.08, 0.35));
+  // Sourcils froncés (barres sombres inclinées vers l'intérieur-bas)
+  const browL = part(new THREE.BoxGeometry(0.22, 0.05, 0.06), browMat, 0.19, 0.2, 0.3);
+  const browR = part(new THREE.BoxGeometry(0.22, 0.05, 0.06), browMat, -0.19, 0.2, 0.3);
+  browL.rotation.z = 0.5; browR.rotation.z = -0.5;      // en V = colère
+  headGrp.add(browL, browR);
+  // Gueule sombre entrouverte
+  const mouth = part(new THREE.SphereGeometry(0.13, 14, 10), browMat, 0, -0.2, 0.42);
+  mouth.scale.set(1.1, 0.55, 0.5);
+  headGrp.add(mouth);
+  // Crocs (deux cônes blancs pointés vers le bas)
+  const fangL = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 8), fangMat);
+  fangL.position.set(0.07, -0.22, 0.5); fangL.rotation.x = Math.PI; fangL.castShadow = true;
+  const fangR = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 8), fangMat);
+  fangR.position.set(-0.07, -0.22, 0.5); fangR.rotation.x = Math.PI; fangR.castShadow = true;
+  headGrp.add(fangL, fangR);
   // Oreilles (pivotent à la base)
   function makeEar(side) {
     const g = new THREE.Group();
@@ -105,9 +126,9 @@
     const inner = part(new THREE.SphereGeometry(0.09, 12, 12), pinkMat, 0, 0.45, 0.05);
     inner.scale.set(1, 3.2, 0.4);
     g.add(outer, inner);
-    g.position.set(side * 0.16, 0.28, -0.02);
-    g.rotation.z = side * 0.14;
-    g.rotation.x = -0.12;
+    g.position.set(side * 0.16, 0.26, -0.05);
+    g.rotation.z = side * 0.3;
+    g.rotation.x = 0.6;               // rabattues vers l'arrière = menaçant
     return g;
   }
   const earL = makeEar(1), earR = makeEar(-1);
@@ -136,22 +157,23 @@
   rabbit.add(tail);
 
   // Échelle "géant" et pose au sol
-  const SCALE = 1.25;
+  const SCALE = 1.35;
   rabbit.scale.setScalar(SCALE);
-  rabbit.position.set(0, FLOOR_Y, -4);
+  rabbit.position.set(0, FLOOR_Y, -8);
   scene.add(rabbit);
 
-  // ================= DÉPLACEMENT (il erre dans la pièce) =================
-  const anchor = new THREE.Vector3(0, FLOOR_Y, -4);   // centre de sa zone de balade
+  // ================= DÉPLACEMENT (il rôde et charge) =================
+  const anchor = new THREE.Vector3(0, FLOOR_Y, -8);   // centre de sa zone, plus loin
   let target = pickTarget();
   let facing = Math.PI;                 // orientation courante (regarde vers la caméra au départ)
   let speed = 0;                        // vitesse actuelle (m/s monde)
   let hopT = 0, nextHop = 3 + Math.random() * 4;
   let pauseT = 0;
+  let charging = false, chargeCd = 4 + Math.random() * 4;
 
   function pickTarget() {
     const a = Math.random() * Math.PI * 2;
-    const r = 1 + Math.random() * 2.6;
+    const r = 1.5 + Math.random() * 3;
     return new THREE.Vector3(anchor.x + Math.cos(a) * r, FLOOR_Y, anchor.z + Math.sin(a) * r);
   }
 
@@ -206,24 +228,30 @@
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
-    // --- déplacement du lapin ---
+    // --- déplacement du lapin (il rôde, puis charge vers toi) ---
+    chargeCd -= dt;
+    if (!charging && chargeCd <= 0 && pauseT <= 0) {
+      charging = true;
+      target.set((Math.random() - 0.5) * 1.5, FLOOR_Y, -2.2);   // fonce droit sur toi
+    }
     tmpDir.subVectors(target, rabbit.position); tmpDir.y = 0;
     const dist = tmpDir.length();
     if (pauseT > 0) {
       pauseT -= dt; speed += (0 - speed) * Math.min(1, dt * 6);
-    } else if (dist < 0.25) {
+    } else if (dist < 0.3) {
+      if (charging) { charging = false; chargeCd = 6 + Math.random() * 5; }
       target = pickTarget();
-      pauseT = 0.6 + Math.random() * 2.2;   // il s'arrête, renifle, repart
+      pauseT = 0.4 + Math.random() * 1.8;   // il s'arrête, guette, repart
     } else {
-      speed += (0.85 - speed) * Math.min(1, dt * 3);
+      const maxV = charging ? 3.4 : 0.8;
+      speed += (maxV - speed) * Math.min(1, dt * (charging ? 6 : 3));
       tmpDir.normalize();
       rabbit.position.addScaledVector(tmpDir, speed * dt);
-      // s'oriente vers sa direction de marche (lissé)
       const want = Math.atan2(tmpDir.x, tmpDir.z);
       let d = want - facing;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      facing += d * Math.min(1, dt * 5);
+      facing += d * Math.min(1, dt * (charging ? 9 : 5));
     }
     rabbit.rotation.y = facing;
 
@@ -251,22 +279,23 @@
     body.scale.y = 0.9 - hopSquash + Math.sin(t * 2) * 0.01;
     body.scale.x = 1.0 + hopSquash * 0.5;
 
-    // oreilles qui ballottent
-    const ear = Math.sin(t * 3) * 0.12 + moving * Math.sin(gait * 0.5) * 0.1;
-    earL.rotation.x = -0.12 + ear;
-    earR.rotation.x = -0.12 + Math.sin(t * 3 + 0.6) * 0.12 + moving * Math.sin(gait * 0.5 + 0.4) * 0.1;
-    // pendant le saut, oreilles vers l'arrière
-    if (hopT > 0) { earL.rotation.x -= 0.5; earR.rotation.x -= 0.5; }
+    // oreilles rabattues en arrière (agressif) + frémissement
+    const earBase = 0.6;
+    earL.rotation.x = earBase + Math.sin(t * 3) * 0.08;
+    earR.rotation.x = earBase + Math.sin(t * 3 + 0.6) * 0.08;
+    if (charging || hopT > 0) { earL.rotation.x += 0.35; earR.rotation.x += 0.35; }
 
-    // tête qui bouge un peu + reniflement du nez
-    headGrp.rotation.x = Math.sin(t * 0.8) * 0.05 + (pauseT > 0 ? Math.sin(t * 6) * 0.06 : 0);
-    headGrp.rotation.y = Math.sin(t * 0.5) * 0.12;
+    // tête basse et menaçante, grognement/tremblement quand il charge
+    headGrp.rotation.x = 0.08 + Math.sin(t * 0.8) * 0.04 + (charging ? 0.32 : 0) + (pauseT > 0 ? Math.sin(t * 6) * 0.05 : 0);
+    headGrp.rotation.y = Math.sin(t * 0.5) * 0.1;
+    headGrp.rotation.z = charging ? Math.sin(t * 34) * 0.03 : 0;
     const twitch = pauseT > 0 ? (Math.sin(t * 22) * 0.5 + 0.5) : 0;
-    nose.scale.setScalar(1 + twitch * 0.25);
+    nose.scale.setScalar(1 + twitch * 0.2);
 
-    // clignement des yeux
-    const blink = (Math.sin(t * 1.7) > 0.985) ? 0.1 : 1;
-    eyeL.scale.y = blink; eyeR.scale.y = blink;
+    // yeux : regard fixe et mauvais (rare clignement), lueur rouge qui pulse
+    const blink = (Math.sin(t * 1.3) > 0.992) ? 0.15 : 1;
+    eyeL.scale.y = 0.6 * blink; eyeR.scale.y = 0.6 * blink;
+    eyeMat.emissiveIntensity = 1.3 + Math.sin(t * 4) * 0.5 + (charging ? 1.3 : 0);
 
     // queue frétille
     tail.position.x = Math.sin(t * 5) * 0.03 * moving;
