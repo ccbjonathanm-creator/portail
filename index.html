@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#05010f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; manifest-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -84,9 +84,9 @@
   <div class="hud">
     <div class="top" id="hudTop">
       <div class="title">Portail</div>
-      <div class="subtitle" id="statusLine">Ancré dans ton espace</div>
+      <div class="subtitle" id="statusLine">Chargement…</div>
     </div>
-    <div class="hint" id="hint">Bouge ton téléphone : le portail <span>reste en place</span></div>
+    <div class="hint" id="hint">Regarde <span>tout autour de toi</span> 👀</div>
   </div>
 
   <div id="fps">--</div>
@@ -99,12 +99,13 @@
       <div class="hole"></div>
     </div>
     <h1>Portail</h1>
-    <p>Ouvre une fenêtre vers un autre monde, posée au milieu de ta pièce. Bouge autour d'elle pour la voir sous tous les angles.</p>
-    <button class="btn" id="enterBtn">Ouvrir le portail</button>
+    <p>Active ta caméra et regarde autour de toi. Quelque chose d'énorme s'est invité dans la pièce…</p>
+    <button class="btn" id="enterBtn">Lancer</button>
     <div class="note" id="startNote">L'app utilise ta caméra et les capteurs de mouvement. Rien n'est enregistré ni envoyé, tout reste sur ton téléphone.</div>
   </div>
 
   <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

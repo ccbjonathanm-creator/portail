@@ -1,11 +1,14 @@
 /* Service worker Portail - hors-ligne, réseau d'abord pour le code. */
-const CACHE = 'portail-v3';
+const CACHE = 'portail-v5';
+// Les gros modèles GLB ne sont PAS précachés (trop lourds à l'install) :
+// ils sont mis en cache à la volée par le gestionnaire fetch ci-dessous.
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './manifest.webmanifest',
   './vendor/three.min.js',
+  './vendor/GLTFLoader.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-512-maskable.png'
@@ -24,6 +27,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // Les gros modèles GLB passent en direct au réseau, sans interception :
+  // les cloner/mettre en cache bloque le flux d'un fichier de plusieurs Mo.
+  if (e.request.url.endsWith('.glb') || e.request.url.includes('/models/')) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
