@@ -123,6 +123,16 @@
   const RAB = { targetHeight: 2.4, pos: new THREE.Vector3(0, FLOOR_Y, -5.6), rotY: 0 };
   const MAN = { targetHeight: 1.75, pos: new THREE.Vector3(-2.9, FLOOR_Y, -4.4), rotY: 0.6 };
 
+  // --- état de déplacement du lapin (sauts + approche, corps entier) ---
+  const rabPos = RAB.pos.clone();
+  let rabTarget = new THREE.Vector3(0, FLOOR_Y, -5.2);
+  let rabFacing = 0, hopPhase = 0, chargeCd = 3 + Math.random() * 3;
+  const _tmp = new THREE.Vector3();
+  function pickRabTarget(charge) {
+    if (charge) return new THREE.Vector3((Math.random() - 0.5) * 1.4, FLOOR_Y, -2.9); // fonce vers la caméra
+    return new THREE.Vector3(-1 + Math.random() * 3, FLOOR_Y, -6.4 + Math.random() * 2.6);
+  }
+
   let rabbit = null, man = null;
   const status = { rabbit: false, man: false };
 
@@ -226,11 +236,34 @@
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
-    // --- lapin géant : respiration + léger dandinement, il remue la tête ---
+    // --- lapin géant : il sautille dans la pièce et fonce parfois vers toi ---
     if (rabbit) {
-      rabbit.rotation.z = Math.sin(t * 0.9) * 0.02;
-      rabbit.rotation.x = Math.sin(t * 0.7) * 0.03;            // remue un peu la tête
-      rabbit.position.y = FLOOR_Y + Math.sin(t * 1.6) * 0.03;  // respiration/dandinement
+      chargeCd -= dt;
+      _tmp.subVectors(rabTarget, rabPos); _tmp.y = 0;
+      const dist = _tmp.length();
+      const charging = rabTarget.z > -3.6;
+      if (dist < 0.4) {
+        if (charging) { chargeCd = 5 + Math.random() * 5; rabTarget = pickRabTarget(false); }
+        else { rabTarget = pickRabTarget(chargeCd <= 0); }
+      } else {
+        _tmp.normalize();
+        const v = charging ? 2.7 : 1.1;                 // vitesse (m/s), plus vif en charge
+        rabPos.addScaledVector(_tmp, v * dt);
+        const want = Math.atan2(_tmp.x, _tmp.z);        // oriente le nez (+Z) vers la cible
+        let d = want - rabFacing;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        rabFacing += d * Math.min(1, dt * 7);
+      }
+      const moving = dist > 0.4 ? 1 : 0;
+      hopPhase += dt * (moving ? 7.5 : 2.5) * (charging ? 1.35 : 1);
+      const air = Math.abs(Math.sin(hopPhase));          // 0 (au sol) .. 1 (en l'air)
+      rabbit.position.set(rabPos.x, FLOOR_Y + air * (charging ? 0.5 : 0.32), rabPos.z);
+      rabbit.rotation.set(0, rabFacing, 0);
+      // écrasement à l'atterrissage / étirement en l'air (squash & stretch)
+      const sy = 1 + (air - 0.5) * 0.18 * moving;
+      const sxz = 1 - (air - 0.5) * 0.09 * moving;
+      rabbit.scale.set(sxz, sy, sxz);
     }
 
     // --- homme : il montre du doigt, petite agitation d'excitation ---

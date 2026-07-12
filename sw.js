@@ -1,5 +1,5 @@
 /* Service worker Portail - hors-ligne, réseau d'abord pour le code. */
-const CACHE = 'portail-v5';
+const CACHE = 'portail-v6';
 // Les gros modèles GLB ne sont PAS précachés (trop lourds à l'install) :
 // ils sont mis en cache à la volée par le gestionnaire fetch ci-dessous.
 const ASSETS = [
